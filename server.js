@@ -1,8 +1,8 @@
 const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 
 const PORT = Number(process.env.PORT || 7000);
-const CACHE_SECONDS = Number(process.env.CACHE_SECONDS || 300);
-const TIMEOUT_MS = Number(process.env.TIMEOUT_MS || 15000);
+const CACHE_SECONDS = Number(process.env.CACHE_SECONDS || 600);
+const TIMEOUT_MS = Number(process.env.TIMEOUT_MS || 10000);
 
 const cache = new Map();
 
@@ -87,10 +87,10 @@ function parseSlugAndIndex(rawId) {
 }
 
 const builder = new addonBuilder({
-  id: "com.nguonc.stremio.addon.v4", // Đổi ID để xóa cache Stremio
-  version: "4.0.0",
-  name: "NguonC API (v4)",
-  description: "Xem phim từ NguonC API trên Stremio - Hỗ trợ danh sách đầy đủ",
+  id: "com.nguonc.stremio.addon.v41",
+  version: "4.1.0",
+  name: "NguonC API (v4.1)",
+  description: "Xem phim từ NguonC API trên Stremio - Tối ưu danh sách & cuộn trang",
   resources: ["catalog", "meta", "stream"],
   types: ["movie", "series"],
   catalogs: [
@@ -112,12 +112,14 @@ const builder = new addonBuilder({
 builder.defineCatalogHandler(async ({ type, id, extra }) => {
   try {
     const skip = extra && typeof extra.skip === "number" ? extra.skip : 0;
-    
-    // NguồnC trả về 10 phim/trang. Tải 15 trang = 150 phim mỗi lượt request.
+    const cacheKey = `catalog:${type}:${id}:${skip}`;
+    const hit = cached(cacheKey);
+    if (hit) return { metas: hit, cacheMaxAge: 600 };
+
+    // Mỗi đợt lấy 5 trang API = 50 phim (vừa đủ tải nhanh, không bị Render chặn)
     const ITEMS_PER_PAGE = 10;
-    const PAGES_PER_BATCH = 15; 
-    
-    const startPage = Math.floor(skip / ITEMS_PER_PAGE) + 1;
+    const PAGES_PER_BATCH = 5; 
+    const startPage = Math.floor(skip / (ITEMS_PER_PAGE * PAGES_PER_BATCH)) * PAGES_PER_BATCH + 1;
 
     let path = "/danh-sach/phim-le";
     if (id === "nguonc_series" || type === "series") {
@@ -156,7 +158,8 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
       };
     });
 
-    return { metas, cacheMaxAge: 300 };
+    putCache(cacheKey, metas, 600);
+    return { metas, cacheMaxAge: 600 };
   } catch (e) {
     console.error("[catalog] Error:", e.message);
     return { metas: [] };
