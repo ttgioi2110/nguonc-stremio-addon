@@ -4,18 +4,8 @@ const PORT = Number(process.env.PORT || 7000);
 const API_BASE = (process.env.NGUONC_API_BASE || "https://phim.nguonc.com/api").replace(/\/+$/, "");
 const CACHE_SECONDS = Number(process.env.CACHE_SECONDS || 300);
 const TIMEOUT_MS = Number(process.env.TIMEOUT_MS || 15000);
-const API_PAGE_SIZE = Number(process.env.API_PAGE_SIZE || 10);
-const STREMIO_PAGE_SIZE = Number(process.env.STREMIO_PAGE_SIZE || 100);
-const MAX_API_PAGES = Number(process.env.MAX_API_PAGES || 10);
 
 const cache = new Map();
-
-const GENRES = [
-  "Hành Động", "Tình Cảm", "Hài Hước", "Cổ Trang", "Tâm Lý",
-  "Hình Sự", "Chiến Tranh", "Thể Thao", "Võ Thuật", "Viễn Tưởng",
-  "Phiêu Lưu", "Khoa Học", "Kinh Dị", "Âm Nhạc", "Thần Thoại",
-  "Hoạt Hình", "Gia Đình", "Chính Kịch", "Bí Ẩn", "Học Đường"
-];
 
 function cached(key) {
   const hit = cache.get(key);
@@ -70,6 +60,8 @@ function extractItems(payload) {
   if (!payload) return [];
   if (Array.isArray(payload.items)) return payload.items;
   if (payload.data && Array.isArray(payload.data.items)) return payload.data.items;
+  if (payload.data && Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray(payload)) return payload;
   return [];
 }
 
@@ -111,7 +103,10 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
 
     const metas = items.map(item => {
       const poster = item.poster_url || item.thumb_url || "";
-      const fullPoster = poster.startsWith("http") ? poster : `https://phim.nguonc.com/uploads/movies/${poster}`;
+      let fullPoster = poster;
+      if (poster && !poster.startsWith("http")) {
+        fullPoster = `https://phim.nguonc.com/uploads/movies/${poster}`;
+      }
       return {
         id: `nguonc:${item.slug}`,
         type: type,
@@ -150,12 +145,18 @@ builder.defineMetaHandler(async ({ type, id }) => {
       });
     });
 
+    const poster = movie.poster_url || movie.thumb_url || "";
+    let fullPoster = poster;
+    if (poster && !poster.startsWith("http")) {
+      fullPoster = `https://phim.nguonc.com/uploads/movies/${poster}`;
+    }
+
     return {
       meta: {
         id: `nguonc:${slug}`,
         type: type,
         name: movie.name || movie.title,
-        poster: movie.poster_url || movie.thumb_url,
+        poster: fullPoster,
         description: movie.content || "",
         videos: videos
       }
@@ -214,8 +215,8 @@ builder.defineStreamHandler(async args => {
         const payloadBase64 = Buffer.from(JSON.stringify({ h: hash, t: keyVal })).toString('base64');
         const targetM3u8 = `https://${domain}/${payloadBase64}.m3u8`;
         
-        // Proxy riêng vừa tạo trên Render của bạn
-directProxyUrl = `https://m3u8-proxy-w1lo.onrender.com/proxy-m3u8?url=${encodeURIComponent(targetM3u8)}&referer=${encodeURIComponent(embed)}`;      }
+        directProxyUrl = `https://m3u8-proxy-w1lo.onrender.com/proxy-m3u8?url=${encodeURIComponent(targetM3u8)}&referer=${encodeURIComponent(embed)}`;
+      }
     }
 
     if (directProxyUrl) {
@@ -249,4 +250,3 @@ directProxyUrl = `https://m3u8-proxy-w1lo.onrender.com/proxy-m3u8?url=${encodeUR
 });
 
 serveHTTP(builder.getInterface(), { port: PORT });
-console.log(`NguonC Stremio addon v3 running at http://127.0.0.1:${PORT}/manifest.json`);
