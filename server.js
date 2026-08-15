@@ -78,7 +78,7 @@ function extractItems(payload) {
 
 const builder = new addonBuilder({
   id: "com.nguonc.stremio.addon",
-  version: "3.3.0",
+  version: "3.4.0",
   name: "NguonC API",
   description: "Xem phim từ NguonC API trên Stremio",
   resources: ["catalog", "meta", "stream"],
@@ -88,13 +88,13 @@ const builder = new addonBuilder({
       type: "movie",
       id: "nguonc_movies",
       name: "NguonC - Phim Lẻ",
-      extraSupported: ["skip"]
+      extra: [{ name: "skip" }]
     },
     {
       type: "series",
       id: "nguonc_series",
       name: "NguonC - Phim Bộ",
-      extraSupported: ["skip"]
+      extra: [{ name: "skip" }]
     }
   ]
 });
@@ -102,22 +102,22 @@ const builder = new addonBuilder({
 builder.defineCatalogHandler(async ({ type, id, extra }) => {
   try {
     const skip = extra && typeof extra.skip === "number" ? extra.skip : 0;
-    // Mỗi trang API NguồnC trả về 10 item, tải gộp 5 trang mỗi batch (50 phim)
-    const basePage = Math.floor(skip / 10) + 1;
-    const PAGES_TO_FETCH = 5;
+    
+    // Mỗi trang API NguồnC trả về 10 phim
+    // Tính toán chính xác trang bắt đầu dựa trên tham số skip
+    const page = Math.floor(skip / 10) + 1;
 
     let path = "/danh-sach/phim-le";
     if (id === "nguonc_series" || type === "series") {
       path = "/danh-sach/phim-bo";
     }
 
-    const pagePromises = [];
-    for (let p = 0; p < PAGES_TO_FETCH; p++) {
-      const pageNum = basePage + p;
-      pagePromises.push(
-        fetchWithRetry(`${path}?page=${pageNum}`).catch(() => null)
-      );
-    }
+    // Tải gộp 3 trang liên tiếp (30 phim mỗi đợt) để đảm bảo cuộn không bị khựng
+    const pagePromises = [
+      fetchWithRetry(`${path}?page=${page}`).catch(() => null),
+      fetchWithRetry(`${path}?page=${page + 1}`).catch(() => null),
+      fetchWithRetry(`${path}?page=${page + 2}`).catch(() => null)
+    ];
 
     const results = await Promise.all(pagePromises);
     let allItems = [];
@@ -143,7 +143,7 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
       };
     });
 
-    return { metas };
+    return { metas, cacheMaxAge: 300 };
   } catch (e) {
     console.error("[catalog] Error:", e.message);
     return { metas: [] };
