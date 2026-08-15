@@ -96,9 +96,16 @@ const builder = new addonBuilder({
 
 builder.defineCatalogHandler(async ({ type, id, extra }) => {
   try {
-    let endpoint = type === "movie" ? "/films/phim-le" : "/films/phim-bo";
-    const page = extra.skip ? Math.floor(extra.skip / 20) + 1 : 1;
-    const data = await fetchWithRetry(`${endpoint}?page=${page}`);
+    const page = extra && extra.skip ? Math.floor(extra.skip / 20) + 1 : 1;
+    let endpoint = "";
+
+    if (id === "nguonc_movies" || type === "movie") {
+      endpoint = `/films/danh-sach/phim-le?page=${page}`;
+    } else {
+      endpoint = `/films/danh-sach/phim-bo?page=${page}`;
+    }
+
+    const data = await fetchWithRetry(endpoint);
     const items = extractItems(data);
 
     const metas = items.map(item => {
@@ -109,7 +116,7 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
       }
       return {
         id: `nguonc:${item.slug}`,
-        type: type,
+        type: (id === "nguonc_movies" || type === "movie") ? "movie" : "series",
         name: item.name || item.title || "Phim NguồnC",
         poster: fullPoster,
         description: item.content || ""
