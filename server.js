@@ -109,17 +109,21 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
     const data = await fetchWithRetry(`${endpoint}?page=${page}`);
     const items = extractItems(data);
 
-    const metas = items.map(item => ({
-      id: `nguonc:${item.slug}`,
-      type: type,
-      name: item.name || item.title,
-      poster: item.poster_url || item.thumb_url,
-      description: item.content || ""
-    }));
+    const metas = items.map(item => {
+      const poster = item.poster_url || item.thumb_url || "";
+      const fullPoster = poster.startsWith("http") ? poster : `https://phim.nguonc.com/uploads/movies/${poster}`;
+      return {
+        id: `nguonc:${item.slug}`,
+        type: type,
+        name: item.name || item.title || "Phim NguồnC",
+        poster: fullPoster,
+        description: item.content || ""
+      };
+    });
 
     return { metas };
   } catch (e) {
-    console.error("[catalog]", e.message);
+    console.error("[catalog] Error:", e.message);
     return { metas: [] };
   }
 });
