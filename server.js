@@ -76,9 +76,20 @@ function extractItems(payload) {
   return [];
 }
 
+// Hàm làm sạch slug, tránh lỗi dính ID
+function parseSlugAndIndex(rawId) {
+  const clean = String(rawId || "").replace(/^nguonc:/, "");
+  const parts = clean.split(":");
+  return {
+    slug: parts[0],
+    sIdx: parseInt(parts[1] || "0", 10),
+    epIdx: parseInt(parts[2] || "0", 10)
+  };
+}
+
 const builder = new addonBuilder({
   id: "com.nguonc.stremio.addon",
-  version: "3.4.0",
+  version: "3.5.0",
   name: "NguonC API",
   description: "Xem phim từ NguonC API trên Stremio",
   resources: ["catalog", "meta", "stream"],
@@ -88,13 +99,13 @@ const builder = new addonBuilder({
       type: "movie",
       id: "nguonc_movies",
       name: "NguonC - Phim Lẻ",
-      extra: [{ name: "skip" }]
+      extraSupported: ["skip"]
     },
     {
       type: "series",
       id: "nguonc_series",
       name: "NguonC - Phim Bộ",
-      extra: [{ name: "skip" }]
+      extraSupported: ["skip"]
     }
   ]
 });
@@ -102,9 +113,7 @@ const builder = new addonBuilder({
 builder.defineCatalogHandler(async ({ type, id, extra }) => {
   try {
     const skip = extra && typeof extra.skip === "number" ? extra.skip : 0;
-    
-    // Mỗi trang API NguồnC trả về 10 phim
-    // Tính toán chính xác trang bắt đầu dựa trên tham số skip
+    // Mỗi trang NguồnC có 10 phim, skip/10 + 1 tính ra đúng trang API
     const page = Math.floor(skip / 10) + 1;
 
     let path = "/danh-sach/phim-le";
@@ -112,23 +121,10 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
       path = "/danh-sach/phim-bo";
     }
 
-    // Tải gộp 3 trang liên tiếp (30 phim mỗi đợt) để đảm bảo cuộn không bị khựng
-    const pagePromises = [
-      fetchWithRetry(`${path}?page=${page}`).catch(() => null),
-      fetchWithRetry(`${path}?page=${page + 1}`).catch(() => null),
-      fetchWithRetry(`${path}?page=${page + 2}`).catch(() => null)
-    ];
+    const data = await fetchWithRetry(`${path}?page=${page}`);
+    const items = extractItems(data);
 
-    const results = await Promise.all(pagePromises);
-    let allItems = [];
-    
-    results.forEach(data => {
-      if (data) {
-        allItems = allItems.concat(extractItems(data));
-      }
-    });
-
-    const metas = allItems.map(item => {
+    const metas = items.map(item => {
       const poster = item.poster_url || item.thumb_url || "";
       let fullPoster = poster;
       if (poster && !poster.startsWith("http")) {
@@ -152,7 +148,9 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
 
 builder.defineMetaHandler(async ({ type, id }) => {
   try {
-    const slug = id.replace(/^nguonc:/, "");
+    const { slug } = parseSlugAndIndex(id);
+    if (!slug) return { meta: {} };
+
     const data = await fetchWithRetry(`/film/${encodeURIComponent(slug)}`);
     const movie = extractMovie(data);
     if (!movie) return { meta: {} };
@@ -193,19 +191,14 @@ builder.defineMetaHandler(async ({ type, id }) => {
       }
     };
   } catch (e) {
-    console.error("[meta]", e.message);
+    console.error("[meta] Error:", e.message);
     return { meta: {} };
   }
 });
 
 builder.defineStreamHandler(async args => {
   try {
-    const raw = String(args.id || "").replace(/^nguonc:/, "");
-    const parts = raw.split(":");
-    const slug = parts[0];
-    const sIdx = parseInt(parts[1] || "0", 10);
-    const epIdx = parseInt(parts[2] || "0", 10);
-
+    const { slug, sIdx, epIdx } = parseSlugAndIndex(args.id);
     if (!slug) return { streams: [] };
 
     const key = `film:${slug}`;
