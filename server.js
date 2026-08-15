@@ -85,7 +85,10 @@ function parseEmbedUrlFromEpisode(movie, serverName, wantedEpisode) {
     for (const ep of items) {
       const epName = String(ep.name || ep.slug || "").trim();
       if (epName === String(wantedEpisode).trim()) {
-        return ep.embed || ep.link_embed || ep.link_m3u8 || null;
+        return {
+          embed: ep.embed || ep.link_embed || null,
+          m3u8: ep.link_m3u8 || ep.m3u8 || null
+        };
       }
     }
   }
@@ -94,7 +97,7 @@ function parseEmbedUrlFromEpisode(movie, serverName, wantedEpisode) {
 
 const builder = new addonBuilder({
   id: "com.nguonc.stremio.addon",
-  version: "3.0.2",
+  version: "3.1.0",
   name: "NguonC API",
   description: "Xem phim từ NguonC API trên Stremio",
   resources: ["catalog", "meta", "stream"],
@@ -200,67 +203,93 @@ builder.defineStreamHandler(async args => {
     let payload = cached(key);
     if (!payload) payload = putCache(key, await fetchWithRetry(`/film/${encodeURIComponent(slug)}`));
     const movie = extractMovie(payload);
-    const embed = parseEmbedUrlFromEpisode(movie, serverName, wantedEpisode);
-    if (!embed) return { streams: [] };
+    const epData = parseEmbedUrlFromEpisode(movie, serverName, wantedEpisode);
+    if (!epData) return { streams: [] };
 
-    const embedKey = `embed:${embed}`;
-    let html = cached(embedKey);
-    if (!html) {
-      try {
-        html = await fetchText(embed, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": "https://phim.nguonc.com/",
-            "Origin": "https://phim.nguonc.com"
+    const streams = [];
+
+    // Nếu API trả về trực tiếp link m3u8
+    if (epData.m3u8) {
+      streams.push({
+        name: `NguonC • Direct`,
+        title: `Phát trực tiếp • Tập ${wantedEpisode}`,
+        url: epData.m3u8,
+        behaviorHints: {
+          notSupported: false,
+          proxyHeaders: {
+            request: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+              "Referer": "https://phim.nguonc.com/"
+            }
           }
-        });
-        if (html) putCache(embedKey, html, 60);
-      } catch (err) {
-        console.error("[stream] Fetch embed error:", err.message);
+        }
+      });
+    }
+
+    // Lấy link m3u8 bóc tách từ Embed
+    if (epData.embed) {
+      const embed = epData.embed;
+      const embedKey = `embed:${embed}`;
+      let html = cached(embedKey);
+      if (!html) {
+        try {
+          html = await fetchText(embed, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+              "Referer": "https://phim.nguonc.com/",
+              "Origin": "https://phim.nguonc.com"
+            }
+          });
+          if (html) putCache(embedKey, html, 60);
+        } catch (err) {
+          console.error("[stream] Fetch embed error:", err.message);
+        }
       }
-    }
 
-    let directProxyUrl = null;
-    if (html) {
-      const hashMatch = html.match(/hash\s*:\s*["']([^"']+)["']/i) || html.match(/h\s*:\s*["']([^"']+)["']/i);
-      const keyMatch = html.match(/key\s*:\s*["']([^"']+)["']/i) || html.match(/t\s*:\s*["']([^"']+)["']/i);
-      
-      const hash = hashMatch ? hashMatch[1] : null;
-      const keyVal = keyMatch ? keyMatch[1] : null;
+      if (html) {
+        // Tìm trực tiếp file .m3u8 trong source HTML/JS
+        const m3u8Match = html.match(/(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/i);
+        if (m3u8Match) {
+          streams.push({
+            name: `NguonC • ${serverName}`,
+            title: `Phát trực tiếp (HLS) • Tập ${wantedEpisode}`,
+            url: m3u8Match[1],
+            behaviorHints: {
+              proxyHeaders: {
+                request: {
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                  "Referer": embed
+                }
+              }
+            }
+          });
+        }
 
-      if (hash && keyVal) {
-        const domain = embed.split('/')[2];
-        const payloadBase64 = Buffer.from(JSON.stringify({ h: hash, t: keyVal })).toString('base64');
-        const targetM3u8 = `https://${domain}/${payloadBase64}.m3u8`;
-        
-        directProxyUrl = `https://m3u8-proxy-w1lo.onrender.com/proxy-m3u8?url=${encodeURIComponent(targetM3u8)}&referer=${encodeURIComponent(embed)}`;
+        // Bóc tách Hash & Key giải mã của NguồnC Player
+        const hashMatch = html.match(/hash\s*:\s*["']([^"']+)["']/i) || html.match(/h\s*:\s*["']([^"']+)["']/i);
+        const keyMatch = html.match(/key\s*:\s*["']([^"']+)["']/i) || html.match(/t\s*:\s*["']([^"']+)["']/i);
+        if (hashMatch && keyMatch) {
+          const domain = embed.split('/')[2];
+          const payloadBase64 = Buffer.from(JSON.stringify({ h: hashMatch[1], t: keyMatch[1] })).toString('base64');
+          const targetM3u8 = `https://${domain}/${payloadBase64}.m3u8`;
+          
+          streams.push({
+            name: `NguonC • Player Proxy`,
+            title: `Phát trực tiếp (Decrypted) • Tập ${wantedEpisode}`,
+            url: `https://m3u8-proxy-w1lo.onrender.com/proxy-m3u8?url=${encodeURIComponent(targetM3u8)}&referer=${encodeURIComponent(embed)}`
+          });
+        }
       }
+
+      // Dự phòng cuối cùng: Nút mở Web Embed
+      streams.push({
+        name: `NguonC • Web Player`,
+        title: `Mở trình duyệt • Tập ${wantedEpisode}`,
+        externalUrl: embed
+      });
     }
 
-    if (directProxyUrl) {
-      return {
-        streams: [{
-          name: `NguonC • ${serverName}`,
-          title: `Phát trực tiếp • Tập ${wantedEpisode}`,
-          url: directProxyUrl,
-          behaviorHints: {
-            bingeGroup: `nguonc-${serverName}`,
-            videoSize: "HD"
-          }
-        }],
-        cacheMaxAge: 60
-      };
-    }
-
-    return {
-      streams: [{
-        name: `NguonC • ${serverName}`,
-        title: `Mở player • Tập ${wantedEpisode}`,
-        externalUrl: embed,
-        behaviorHints: { bingeGroup: `nguonc-${serverName}` }
-      }],
-      cacheMaxAge: 60
-    };
+    return { streams, cacheMaxAge: 60 };
   } catch (e) {
     console.error("[stream]", e.message);
     return { streams: [] };
