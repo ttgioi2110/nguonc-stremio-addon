@@ -100,9 +100,9 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
     let endpoint = "";
 
     if (id === "nguonc_movies" || type === "movie") {
-      endpoint = `/films/danh-sach/phim-le?page=${page}`;
+      endpoint = `/danh-sach/phim-le?page=${page}`;
     } else {
-      endpoint = `/films/danh-sach/phim-bo?page=${page}`;
+      endpoint = `/danh-sach/phim-bo?page=${page}`;
     }
 
     const data = await fetchWithRetry(endpoint);
