@@ -76,7 +76,6 @@ function extractItems(payload) {
   return [];
 }
 
-// Hàm làm sạch slug, tránh lỗi dính ID
 function parseSlugAndIndex(rawId) {
   const clean = String(rawId || "").replace(/^nguonc:/, "");
   const parts = clean.split(":");
@@ -89,7 +88,7 @@ function parseSlugAndIndex(rawId) {
 
 const builder = new addonBuilder({
   id: "com.nguonc.stremio.addon",
-  version: "3.5.0",
+  version: "3.6.0",
   name: "NguonC API",
   description: "Xem phim từ NguonC API trên Stremio",
   resources: ["catalog", "meta", "stream"],
@@ -113,18 +112,36 @@ const builder = new addonBuilder({
 builder.defineCatalogHandler(async ({ type, id, extra }) => {
   try {
     const skip = extra && typeof extra.skip === "number" ? extra.skip : 0;
-    // Mỗi trang NguồnC có 10 phim, skip/10 + 1 tính ra đúng trang API
-    const page = Math.floor(skip / 10) + 1;
+    
+    // Mỗi trang API NguồnC = 10 phim.
+    // Stremio yêu cầu mỗi lượt skip là 100 phim để kích hoạt cuộn trang tiếp.
+    const startPage = Math.floor(skip / 10) + 1;
+    const PAGES_PER_BATCH = 10; // Tải 10 trang API = 100 phim
 
     let path = "/danh-sach/phim-le";
     if (id === "nguonc_series" || type === "series") {
       path = "/danh-sach/phim-bo";
     }
 
-    const data = await fetchWithRetry(`${path}?page=${page}`);
-    const items = extractItems(data);
+    // Tạo request song song cho 10 trang API
+    const fetchPromises = [];
+    for (let i = 0; i < PAGES_PER_BATCH; i++) {
+      const pageNum = startPage + i;
+      fetchPromises.push(
+        fetchWithRetry(`${path}?page=${pageNum}`).catch(() => null)
+      );
+    }
 
-    const metas = items.map(item => {
+    const responses = await Promise.all(fetchPromises);
+    let allItems = [];
+
+    responses.forEach(data => {
+      if (data) {
+        allItems = allItems.concat(extractItems(data));
+      }
+    });
+
+    const metas = allItems.map(item => {
       const poster = item.poster_url || item.thumb_url || "";
       let fullPoster = poster;
       if (poster && !poster.startsWith("http")) {
