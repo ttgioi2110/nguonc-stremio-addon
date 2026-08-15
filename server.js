@@ -87,10 +87,10 @@ function parseSlugAndIndex(rawId) {
 }
 
 const builder = new addonBuilder({
-  id: "com.nguonc.stremio.addon",
-  version: "3.6.0",
-  name: "NguonC API",
-  description: "Xem phim từ NguonC API trên Stremio",
+  id: "com.nguonc.stremio.addon.v4", // Đổi ID để xóa cache Stremio
+  version: "4.0.0",
+  name: "NguonC API (v4)",
+  description: "Xem phim từ NguonC API trên Stremio - Hỗ trợ danh sách đầy đủ",
   resources: ["catalog", "meta", "stream"],
   types: ["movie", "series"],
   catalogs: [
@@ -98,13 +98,13 @@ const builder = new addonBuilder({
       type: "movie",
       id: "nguonc_movies",
       name: "NguonC - Phim Lẻ",
-      extraSupported: ["skip"]
+      extra: [{ name: "skip" }]
     },
     {
       type: "series",
       id: "nguonc_series",
       name: "NguonC - Phim Bộ",
-      extraSupported: ["skip"]
+      extra: [{ name: "skip" }]
     }
   ]
 });
@@ -113,17 +113,17 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
   try {
     const skip = extra && typeof extra.skip === "number" ? extra.skip : 0;
     
-    // Mỗi trang API NguồnC = 10 phim.
-    // Stremio yêu cầu mỗi lượt skip là 100 phim để kích hoạt cuộn trang tiếp.
-    const startPage = Math.floor(skip / 10) + 1;
-    const PAGES_PER_BATCH = 10; // Tải 10 trang API = 100 phim
+    // NguồnC trả về 10 phim/trang. Tải 15 trang = 150 phim mỗi lượt request.
+    const ITEMS_PER_PAGE = 10;
+    const PAGES_PER_BATCH = 15; 
+    
+    const startPage = Math.floor(skip / ITEMS_PER_PAGE) + 1;
 
     let path = "/danh-sach/phim-le";
     if (id === "nguonc_series" || type === "series") {
       path = "/danh-sach/phim-bo";
     }
 
-    // Tạo request song song cho 10 trang API
     const fetchPromises = [];
     for (let i = 0; i < PAGES_PER_BATCH; i++) {
       const pageNum = startPage + i;
