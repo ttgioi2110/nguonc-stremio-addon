@@ -306,22 +306,38 @@ builder.defineStreamHandler(async args => {
     const embedKey = `embed:${embed}`;
     let html = cached(embedKey);
     if (!html) {
-      html = await fetchText(embed, {
-        headers: {
-          referer: "https://phim.nguonc.com/",
-          origin: "https://phim.nguonc.com"
-        }
-      });
-      putCache(embedKey, html, 60);
+      try {
+        // Bổ sung User-Agent trình duyệt để tránh bị trang embed chặn fetch
+        html = await fetchText(embed, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://phim.nguonc.com/",
+            "Origin": "https://phim.nguonc.com"
+          }
+        });
+        if (html) putCache(embedKey, html, 60);
+      } catch (err) {
+        console.error("[stream] Fetch embed HTML error:", err.message);
+      }
     }
 
-    const media = extractDirectMedia(html, embed);
+    // Tự động tìm chuỗi .m3u8 trong HTML/JS của NguồnC
+    let directUrls = [];
+    if (html) {
+      const m3u8Matches = html.match(/(https?:\/\/[^"' ]+\.m3u8[^"' ]*)/g);
+      if (m3u8Matches && m3u8Matches.length) {
+        // Loại bỏ trùng lặp nếu có
+        directUrls = [...new Set(m3u8Matches)];
+      } else if (typeof extractDirectMedia === "function") {
+        directUrls = extractDirectMedia(html, embed) || [];
+      }
+    }
 
-    if (media.length) {
+    if (directUrls.length) {
       return {
-        streams: media.map((url, i) => ({
+        streams: directUrls.map((url, i) => ({
           name: `NguonC • ${serverName}`,
-          title: media.length > 1 ? `Stream ${i + 1} • ${serverName}` : `Phát trực tiếp • ${serverName}`,
+          title: directUrls.length > 1 ? `Direct Stream ${i + 1} • ${serverName}` : `Phát trực tiếp • Tập ${wantedEpisode}`,
           url,
           behaviorHints: {
             bingeGroup: `nguonc-${serverName}`,
@@ -332,9 +348,7 @@ builder.defineStreamHandler(async args => {
       };
     }
 
-    // Fallback: public embed/player works in a browser, but the HTML did not
-    // expose a direct media URL. Open the player externally rather than
-    // pretending the HTML page itself is a video stream.
+    // Dự phòng mở Web Player nếu không bóc tách được link .m3u8
     return {
       streams: [{
         name: `NguonC • ${serverName}`,
