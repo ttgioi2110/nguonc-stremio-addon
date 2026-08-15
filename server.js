@@ -1,7 +1,6 @@
 const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 
 const PORT = Number(process.env.PORT || 7000);
-const API_BASE = (process.env.NGUONC_API_BASE || "https://phim.nguonc.com/api").replace(/\/+$/, "");
 const CACHE_SECONDS = Number(process.env.CACHE_SECONDS || 300);
 const TIMEOUT_MS = Number(process.env.TIMEOUT_MS || 15000);
 
@@ -23,16 +22,28 @@ function putCache(key, data, ttlSec = CACHE_SECONDS) {
 }
 
 async function fetchWithRetry(path, options = {}) {
-  const url = `${API_BASE}${path}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } finally {
-    clearTimeout(timeout);
+  const candidates = [
+    `https://phim.nguonc.com/api/films${path}`,
+    `https://phim.nguonc.com/api${path}`
+  ];
+
+  let lastErr = null;
+  for (const url of candidates) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      if (res.ok) {
+        return await res.json();
+      }
+      lastErr = new Error(`HTTP ${res.status} at ${url}`);
+    } catch (err) {
+      lastErr = err;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
+  throw lastErr || new Error("Failed to fetch API");
 }
 
 async function fetchText(url, options = {}) {
@@ -83,7 +94,7 @@ function parseEmbedUrlFromEpisode(movie, serverName, wantedEpisode) {
 
 const builder = new addonBuilder({
   id: "com.nguonc.stremio.addon",
-  version: "3.0.1",
+  version: "3.0.2",
   name: "NguonC API",
   description: "Xem phim từ NguonC API trên Stremio",
   resources: ["catalog", "meta", "stream"],
