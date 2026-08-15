@@ -87,10 +87,10 @@ function parseSlugAndIndex(rawId) {
 }
 
 const builder = new addonBuilder({
-  id: "com.nguonc.stremio.addon.v41",
-  version: "4.1.0",
-  name: "NguonC API (v4.1)",
-  description: "Xem phim từ NguonC API trên Stremio - Tối ưu danh sách & cuộn trang",
+  id: "com.nguonc.stremio.addon.v42",
+  version: "4.2.0",
+  name: "NguonC API (v4.2)",
+  description: "Xem phim từ NguonC API trên Stremio - Fix 404 & Infinite Scroll",
   resources: ["catalog", "meta", "stream"],
   types: ["movie", "series"],
   catalogs: [
@@ -98,13 +98,13 @@ const builder = new addonBuilder({
       type: "movie",
       id: "nguonc_movies",
       name: "NguonC - Phim Lẻ",
-      extra: [{ name: "skip" }]
+      extraSupported: ["skip"]
     },
     {
       type: "series",
       id: "nguonc_series",
       name: "NguonC - Phim Bộ",
-      extra: [{ name: "skip" }]
+      extraSupported: ["skip"]
     }
   ]
 });
@@ -116,7 +116,7 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
     const hit = cached(cacheKey);
     if (hit) return { metas: hit, cacheMaxAge: 600 };
 
-    // Mỗi đợt lấy 5 trang API = 50 phim (vừa đủ tải nhanh, không bị Render chặn)
+    // Mỗi request tải 5 trang NguồnC (50 phim)
     const ITEMS_PER_PAGE = 10;
     const PAGES_PER_BATCH = 5; 
     const startPage = Math.floor(skip / (ITEMS_PER_PAGE * PAGES_PER_BATCH)) * PAGES_PER_BATCH + 1;
@@ -169,7 +169,11 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
 builder.defineMetaHandler(async ({ type, id }) => {
   try {
     const { slug } = parseSlugAndIndex(id);
-    if (!slug) return { meta: {} };
+    
+    // Bỏ qua ID không hợp lệ hoặc ID IMDb/TMDb
+    if (!slug || slug === "tmdb" || slug.startsWith("tt")) {
+      return { meta: {} };
+    }
 
     const data = await fetchWithRetry(`/film/${encodeURIComponent(slug)}`);
     const movie = extractMovie(data);
@@ -219,7 +223,11 @@ builder.defineMetaHandler(async ({ type, id }) => {
 builder.defineStreamHandler(async args => {
   try {
     const { slug, sIdx, epIdx } = parseSlugAndIndex(args.id);
-    if (!slug) return { streams: [] };
+    
+    // Bỏ qua ID không hợp lệ hoặc ID IMDb/TMDb
+    if (!slug || slug === "tmdb" || slug.startsWith("tt")) {
+      return { streams: [] };
+    }
 
     const key = `film:${slug}`;
     let payload = cached(key);
