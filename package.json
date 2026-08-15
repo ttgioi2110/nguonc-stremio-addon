@@ -1,0 +1,16 @@
+{
+  "name": "nguonc-stremio-addon",
+  "version": "3.0.0",
+  "private": true,
+  "description": "NguonC Stremio addon v3",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "stremio-addon-sdk": "^1.6.10"
+  }
+}
