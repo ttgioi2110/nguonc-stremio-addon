@@ -83,7 +83,7 @@ function parseEmbedUrlFromEpisode(movie, serverName, wantedEpisode) {
 
 const builder = new addonBuilder({
   id: "com.nguonc.stremio.addon",
-  version: "3.0.0",
+  version: "3.0.1",
   name: "NguonC API",
   description: "Xem phim từ NguonC API trên Stremio",
   resources: ["catalog", "meta", "stream"],
@@ -96,15 +96,15 @@ const builder = new addonBuilder({
 
 builder.defineCatalogHandler(async ({ type, id, extra }) => {
   try {
-    const page = extra && extra.skip ? Math.floor(extra.skip / 20) + 1 : 1;
-    let endpoint = "";
+    const skip = extra && typeof extra.skip === "number" ? extra.skip : 0;
+    const page = Math.floor(skip / 20) + 1;
 
-    if (id === "nguonc_movies" || type === "movie") {
-      endpoint = `/danh-sach/phim-le?page=${page}`;
-    } else {
-      endpoint = `/danh-sach/phim-bo?page=${page}`;
+    let path = "/danh-sach/phim-le";
+    if (id === "nguonc_series" || type === "series") {
+      path = "/danh-sach/phim-bo";
     }
 
+    const endpoint = `${path}?page=${page}`;
     const data = await fetchWithRetry(endpoint);
     const items = extractItems(data);
 
@@ -112,7 +112,7 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
       const poster = item.poster_url || item.thumb_url || "";
       let fullPoster = poster;
       if (poster && !poster.startsWith("http")) {
-        fullPoster = `https://phim.nguonc.com/uploads/movies/${poster}`;
+        fullPoster = `https://phim.nguonc.com/uploads/movies/${poster.replace(/^\/+/, "")}`;
       }
       return {
         id: `nguonc:${item.slug}`,
@@ -155,7 +155,7 @@ builder.defineMetaHandler(async ({ type, id }) => {
     const poster = movie.poster_url || movie.thumb_url || "";
     let fullPoster = poster;
     if (poster && !poster.startsWith("http")) {
-      fullPoster = `https://phim.nguonc.com/uploads/movies/${poster}`;
+      fullPoster = `https://phim.nguonc.com/uploads/movies/${poster.replace(/^\/+/, "")}`;
     }
 
     return {
