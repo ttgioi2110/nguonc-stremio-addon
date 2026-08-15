@@ -211,8 +211,7 @@ builder.defineStreamHandler(async args => {
         const targetM3u8 = `https://${domain}/${payloadBase64}.m3u8`;
         
         // Proxy riêng vừa tạo trên Render của bạn
-        directProxyUrl = `https://m3u8-proxy-8faw.onrender.com/proxy-m3u8?url=${encodeURIComponent(targetM3u8)}&referer=${encodeURIComponent(embed)}`;
-      }
+directProxyUrl = `https://m3u8-proxy-w1lo.onrender.com/proxy-m3u8?url=${encodeURIComponent(targetM3u8)}&referer=${encodeURIComponent(embed)}`;      }
     }
 
     if (directProxyUrl) {
