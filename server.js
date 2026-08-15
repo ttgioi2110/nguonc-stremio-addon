@@ -78,32 +78,57 @@ function extractItems(payload) {
 
 const builder = new addonBuilder({
   id: "com.nguonc.stremio.addon",
-  version: "3.2.0",
+  version: "3.3.0",
   name: "NguonC API",
   description: "Xem phim từ NguonC API trên Stremio",
   resources: ["catalog", "meta", "stream"],
   types: ["movie", "series"],
   catalogs: [
-    { type: "movie", id: "nguonc_movies", name: "NguonC - Phim Lẻ" },
-    { type: "series", id: "nguonc_series", name: "NguonC - Phim Bộ" }
+    {
+      type: "movie",
+      id: "nguonc_movies",
+      name: "NguonC - Phim Lẻ",
+      extraSupported: ["skip"]
+    },
+    {
+      type: "series",
+      id: "nguonc_series",
+      name: "NguonC - Phim Bộ",
+      extraSupported: ["skip"]
+    }
   ]
 });
 
 builder.defineCatalogHandler(async ({ type, id, extra }) => {
   try {
     const skip = extra && typeof extra.skip === "number" ? extra.skip : 0;
-    const page = Math.floor(skip / 20) + 1;
+    // Mỗi trang API NguồnC trả về 10 item, tải gộp 5 trang mỗi batch (50 phim)
+    const basePage = Math.floor(skip / 10) + 1;
+    const PAGES_TO_FETCH = 5;
 
     let path = "/danh-sach/phim-le";
     if (id === "nguonc_series" || type === "series") {
       path = "/danh-sach/phim-bo";
     }
 
-    const endpoint = `${path}?page=${page}`;
-    const data = await fetchWithRetry(endpoint);
-    const items = extractItems(data);
+    const pagePromises = [];
+    for (let p = 0; p < PAGES_TO_FETCH; p++) {
+      const pageNum = basePage + p;
+      pagePromises.push(
+        fetchWithRetry(`${path}?page=${pageNum}`).catch(() => null)
+      );
+    }
 
-    const metas = items.map(item => {
+    const results = await Promise.all(pagePromises);
+    let allItems = [];
+    
+    results.forEach(data => {
+      if (data) {
+        allItems = allItems.concat(extractItems(data));
+      }
+    });
+
+    const metas = allItems.map(item => {
       const poster = item.poster_url || item.thumb_url || "";
       let fullPoster = poster;
       if (poster && !poster.startsWith("http")) {
@@ -204,7 +229,6 @@ builder.defineStreamHandler(async args => {
 
     const streams = [];
 
-    // 1. Nếu có link m3u8 trực tiếp
     if (m3u8Direct) {
       streams.push({
         name: `NguonC • Direct`,
@@ -213,7 +237,6 @@ builder.defineStreamHandler(async args => {
       });
     }
 
-    // 2. Bóc tách link từ Embed
     if (embed) {
       try {
         const html = await fetchText(embed, {
@@ -237,7 +260,6 @@ builder.defineStreamHandler(async args => {
         console.error("[stream] Parse error:", err.message);
       }
 
-      // 3. Dự phòng qua Web Player (luôn xuất hiện để không bao giờ bị "Không tìm thấy luồng nào")
       streams.push({
         name: `NguonC • Web Player`,
         title: `Mở Trình Duyệt • Tập ${epName}`,
